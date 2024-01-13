@@ -26,6 +26,9 @@ seu <- readRDS("/vol/ExtraVol/MergedData_Unprocessed.RDS")
 #Set the factor levels
 seu@meta.data[["stage"]] <- factor(seu@meta.data[["stage"]], levels = c("embryonic", "shortly_after_birth", "after_weaning", "uninfected_adult_2", "uninfected_adult_1", "early", "peak", "repair"))
 
+#Convert the v5 assay to a v3 assay because DoubletFinder has a problem with v5 at this version.
+seu[["RNA"]] <- as(object = seu[["RNA"]], Class = "Assay")
+
 seu <- SetIdent(seu, value = seu@meta.data$stage)
 ```
 
@@ -177,7 +180,7 @@ for (i in 1:length(seu.split)) {
   ## Homotypic doublet proportion estimate
   annotations <- mouse.sample@meta.data$seurat_clusters
   homotypic.prop <- modelHomotypic(annotations) 
-  nExp.poi <- round(optimal.pk * nrow(mouse.sample@meta.data)) ## Assuming 7.5% doublet formation rate - tailor for your dataset
+  nExp.poi <- round(optimal.pk * nrow(mouse.sample@meta.data)) ## Assuming 7.5% doublet formation rate
   nExp.poi.adj <- round(nExp.poi * (1 - homotypic.prop))
   
   # run DoubletFinder
@@ -197,68 +200,47 @@ for (i in 1:length(seu.split)) {
 }
 
 ```
-
 ```{r}
-DefaultAssay(seu) <- "RNA"
-# split datasets and process without integration
-#seu[["RNA"]] <- split(seu[["RNA"]], f = seu$stage)
-#seu <- SCTransform(seu)
-seu <- NormalizeData(seu)
-seu <- FindVariableFeatures(seu)
-seu <- ScaleData(seu)
-seu <- RunPCA(seu, dims = 1:50)
-seu <- RunUMAP(seu, dims = 1:50, n.neighbors = 50, min.dist = 0.5)
-seu <- FindNeighbors(seu, dims = 1:50, verbose = FALSE)
-seu <- FindClusters(seu, verbose = FALSE, method = 4, resolution = 0.3)
-DimPlot(seu, reduction = "umap", group.by = c("stage"))
-DimPlot(seu, reduction = "umap")
+#Simplify the names in the DoubletFinder output
+for (i in 1:length(seu.split)) {
+  # Retrieve the Seurat object
+  current_seurat_object <- seu.split[[i]]
+
+  # Find the column that starts with "DF.classifications" and rename it
+  df_col <- grep("^DF.classifications", colnames(current_seurat_object@meta.data), value = TRUE)
+  if(length(df_col) == 1) {
+    colnames(current_seurat_object@meta.data)[colnames(current_seurat_object@meta.data) == df_col] <- "Doublet_classification"
+  }
+
+  # Find the column that starts with "pANN" and rename it
+  pANN_col <- grep("^pANN", colnames(current_seurat_object@meta.data), value = TRUE)
+  if(length(pANN_col) == 1) {
+    colnames(current_seurat_object@meta.data)[colnames(current_seurat_object@meta.data) == pANN_col] <- "pANN"
+  }
+
+  # Save the modified object back into the list
+  seu.split[[i]] <- current_seurat_object
+}
 ```
 
 ```{r}
-FeaturePlot(seu, reduction = "umap", features = c("nFeature_RNA", "nCount_RNA", "percent.mt"))
+# merge the splitted data back. do.call(merge()) did not work, so just do it manually:
+seu <- merge(x = seu.split[[1]],
+                       y = c(seu.split[[2]], 
+                             seu.split[[3]],
+                             seu.split[[4]],
+                             seu.split[[5]],
+                             seu.split[[6]],
+                             seu.split[[7]],
+                             seu.split[[8]]),
+                       project = "MergedData")
+
+seu
+```
+```{r}
+seu <- subset(seu, Doublet_classification == "Singlet")
 ```
 
 ```{r}
-FeaturePlot(seu, reduction = "umap", features = c("Acta2"))
-```
-
-
-```{r}
-parasite_infection.split[["adult"]] <- SCTransform(parasite_infection.split[["adult"]], vars.to.regress = "percent.mt", verbose = FALSE)
-parasite_infection.split[["uninfected"]] <- SCTransform(parasite_infection.split[["uninfected"]], vars.to.regress = "percent.mt", verbose = FALSE)
-parasite_infection.split[["early"]] <- SCTransform(parasite_infection.split[["early"]], vars.to.regress = "percent.mt", verbose = FALSE)
-parasite_infection.split[["peak"]] <- SCTransform(parasite_infection.split[["peak"]], vars.to.regress = "percent.mt", verbose = FALSE)
-parasite_infection.split[["repair"]] <- SCTransform(parasite_infection.split[["repair"]], vars.to.regress = "percent.mt", verbose = FALSE)
-```
-
-```{r}
-stages.list <- list(adult = parasite_infection.split[["adult"]], 
-                    uninfected = parasite_infection.split[["uninfected"]],
-                    early = parasite_infection.split[["early"]],
-                    peak = parasite_infection.split[["peak"]],
-                    repair = parasite_infection.split[["repair"]])
-features <- SelectIntegrationFeatures(object.list = stages.list, nfeatures = 3000)
-stages.list <- PrepSCTIntegration(object.list = stages.list, anchor.features = features)
-```
-
-```{r}
-anchors <- FindIntegrationAnchors(object.list = stages.list, normalization.method = "SCT",
-    anchor.features = features)
-parasite_infection.combined.sct <- IntegrateData(anchorset = anchors, normalization.method = "SCT")
-```
-
-```{r}
-parasite_infection.combined.sct <- RunPCA(parasite_infection.combined.sct, verbose = FALSE) %>% 
-  RunUMAP(reduction = "pca", dims = 1:30, verbose = FALSE) %>% 
-  FindNeighbors(reduction = "pca", dims = 1:30) %>% 
-  FindClusters(resolution = 0.1, algorithm = 4)
-```
-
-```{r}
-FeaturePlot(ontogeny.combined.sct, reduction = "umap", features = "H19")
-```
-
-
-```{r}
-DimPlot(ontogeny, label = FALSE, group.by = "stage", reduction = "umap")
+saveRDS(seu, "/vol/ExtraVol/MergedData_Preprocessed.RDS")
 ```
