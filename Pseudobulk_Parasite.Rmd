@@ -1,0 +1,153 @@
+```{r}
+rm(list = ls())
+```
+
+```{r}
+library(glmGamPoi)
+library(tidyverse)
+library(data.table)
+library(DESeq2)
+library(BiocParallel)
+library(conflicted)
+```
+
+```{r}
+cnt <- as.data.frame(readr::read_csv("/vol/ExtraVol/Parasite_Clustered.csv"))
+rownames(cnt) <- cnt$CellName
+cnt <- cnt %>% dplyr::select(-CellName)
+cnt <- as.data.frame(t(cnt))
+```
+```{r}
+#Determine the protein coding genes using the feature table from the same reference genome that was used for alignment
+genomic_features <- read.csv("/vol/MainVol/MouseGenome/Genomic_Features.tsv", row.names = NULL, sep="\t")
+protein_coding_genes <- unique(subset(genomic_features, Gene.Type == "protein-coding")$Symbol)
+```
+
+```{r}
+#Keep only the protein coding genes
+cnt <- subset(cnt, rownames(cnt) %in% protein_coding_genes)
+```
+
+```{r}
+coldata <- as.data.frame(readr::read_csv("/vol/ExtraVol/Parasite_Clustered_Metadata.csv")) %>% dplyr::select(CellName, leiden_anno, stage)
+rownames(coldata) <- coldata$CellName
+
+#We have two leiden clusters of Adamdec1+ cells. We want to group them together for DEX analysis. We also have two samples of uninfected cells. We should group them too.
+coldata <- coldata %>% 
+  dplyr::mutate(leiden_anno_grouped = 
+                  case_when(leiden_anno %in% c("0/FB_Adamdec1+_1", "2/FB_Adamdec1+_2") ~ "0-2/FB_Adamdec1+",
+                          .default = leiden_anno),
+                stage_grouped =
+                  case_when(stage %in% c("uninfected_adult_1", "uninfected_adult_2") ~ "uninfected", 
+                          .default = stage),
+                condition = paste0(leiden_anno_grouped, "_", stage_grouped))
+```
+
+```{r}
+#Check if the count table and coldata have matching column/row names:
+
+unique(colnames(cnt) == rownames(coldata))
+```
+
+```{r}
+condition_sample_size <- coldata %>%
+  dplyr::group_by(condition) %>%
+  dplyr::summarise(sample_size = n()) %>%
+  dplyr::mutate(subsample_size = round(sample_size/5))
+```
+
+```{r}
+coldata_withsamplesize <- merge(coldata, condition_sample_size, by="condition", all=TRUE)
+```
+
+```{r}
+# Initialize a list to store the data frames from each iteration
+pseudobulk_samples <- list()
+
+# Outer loop for each unique condition
+for (i in unique(coldata_withsamplesize$condition)) {
+  # Inner loop to iterate 5 times for each condition
+  for (j in 1:10) {
+    # 5-fold subsample sizes were previously calculated in the subsample_size column
+    i_subsample_size <- unique(subset(coldata_withsamplesize, condition == i)$subsample_size)
+    # Retrieve all the sample IDs that correspond to the condition
+    i_sample_pool <- subset(coldata_withsamplesize, condition == i)$CellName
+    # Do the subsampling on the retrieved sample IDs (i.e., return a subset of IDs)
+    i_subsample_ids <- sample(i_sample_pool, size = i_subsample_size)
+    # Use these IDs to actually subset the count matrix, ensuring it remains a matrix
+    i_cnt <- cnt[,i_subsample_ids, drop = FALSE]
+    # Calculate the average count for each gene (i.e., rowwise means). This is 1 pseudobulk replicate.
+    i_pseudobulk_sample <- as.integer(rowMeans(i_cnt))
+
+    # Store each replicate in the list with a unique name
+    pseudobulk_samples[[paste0(i, "_Rep", j)]] <- i_pseudobulk_sample
+  }
+}
+
+# Convert the list of vectors to a data frame
+final_pseudobulk_df <- as.data.frame(pseudobulk_samples)
+
+# Manually set the column names from the list to retain original characters
+colnames(final_pseudobulk_df) <- names(pseudobulk_samples)
+
+# Optional: if you want to set the row names as gene names
+# Assuming the row names of 'cnt' are gene names
+rownames(final_pseudobulk_df) <- rownames(cnt)
+```
+
+```{r}
+pseudobulk_coldata <- as.data.frame(colnames(final_pseudobulk_df))
+colnames(pseudobulk_coldata) <- "SampleName"
+rownames(pseudobulk_coldata) <- pseudobulk_coldata$SampleName
+# Using stringr to extract the condition from SampleName
+pseudobulk_coldata$condition <- stringr::str_extract(pseudobulk_coldata$SampleName, ".*?(?=_Rep)")
+```
+
+```{r}
+# Reorder the columns of final_pseudobulk_df to match the order in pseudobulk_coldata$SampleName
+final_pseudobulk_df <- final_pseudobulk_df[, rownames(pseudobulk_coldata)]
+
+unique(colnames(final_pseudobulk_df) == rownames(pseudobulk_coldata))
+```
+
+```{r}
+final_pseudobulk_df <- final_pseudobulk_df[rowSums(final_pseudobulk_df) > 10,]
+```
+
+```{r}
+rowSums_final_pseudobulk_df <- as.data.frame(rowSums(final_pseudobulk_df))
+colnames(rowSums_final_pseudobulk_df) <- "GeneCounts"
+```
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = final_pseudobulk_df, colData = pseudobulk_coldata, design = ~condition)
+```
+
+```{r}
+dds <- DESeq(dds, parallel=TRUE, fitType = 'local', test = "LRT", reduced = ~1, sfType = "poscounts")
+```
+```{r}
+# Transform counts for data visualization
+vsd <- vst(dds, blind=TRUE, nsub = sum( rowMeans( counts(dds, normalized=TRUE)) > 5 ))
+
+# Plot PCA
+
+DESeq2::plotPCA(vsd, intgroup = "condition")
+```
+
+```{r}
+res <- results(dds,
+               contrast=c("condition", "6/Jam2+_uninfected", "0-2/FB_Adamdec1+_uninfected"),
+               alpha=0.05)
+summary(res)
+```
+```{r}
+res_list<-data.frame(gene = rownames(res), res,
+stringsAsFactors = F) %>% na.omit() %>% dplyr::select("log2FoldChange", "padj") %>% dplyr::mutate(minuslogp = -log10(padj), "LFCminuslogp" = log2FoldChange*minuslogp) %>% rownames_to_column(var = "gene")
+```
+
+
+```{r}
+saveRDS(dds, "/vol/ExtraVol/dds_parasite.RDS")
+```
+
