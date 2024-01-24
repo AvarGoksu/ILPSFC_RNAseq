@@ -1,0 +1,1481 @@
+```{r}
+rm(list = ls())
+```
+
+```{r}
+library(glmGamPoi)
+library(tidyverse)
+library(data.table)
+library(DESeq2)
+library(BiocParallel)
+library(conflicted)
+library(openxlsx)
+library(clusterProfiler)
+library(ComplexHeatmap)
+library(circlize)
+options("print.matrix" = FALSE)
+```
+
+```{r}
+#Read the fitted glmGamPoi object
+fit <- readRDS("/vol/ExtraVol/glm_gp_object_parasite_pseudobulk.RDS")
+
+#Read the normalized count data for visualizations and downstream analyses
+normalized_counts <- as.data.frame(read_csv("/vol/ExtraVol/deseq2_normalized_counts_parasite_pseudobulk.tsv")) 
+rownames(normalized_counts) <- normalized_counts$...1
+normalized_counts <- normalized_counts %>% dplyr::select(-c(...1))
+
+
+#Read the vst transformed count data for visualizations
+vsd <- as.data.frame(read_csv("/vol/ExtraVol/deseq2_vst_counts_parasite_pseudobulk.tsv")) 
+rownames(vsd) <- vsd$...1
+vsd <- vsd %>% dplyr::select(-c(...1))
+```
+
+```{r}
+#Let's compare the Jam2+ cells to the Adamdec1+ and Adamdec1- fibroblasts to learn more about their identity
+
+res_jam2pos_adamdec1pos <- test_de(fit, 
+               contrast = cond(condition = "6/Jam2+_uninfected") -
+                          cond(condition = "0-2/FB_Adamdec1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_jam2pos_adamdec1pos <- res_jam2pos_adamdec1pos %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_jam2pos_adamdec1pos, "/vol/ExtraVol/markers_jam2pos_adamdec1pos.xlsx")
+
+marker_genes_jam2pos_adamdec1pos <- c(head(res_jam2pos_adamdec1pos, n=25)$name, 
+                                      tail(res_jam2pos_adamdec1pos, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_jam2pos_adamdec1pos
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("6/Jam2+_uninfected"),
+                                        starts_with("0-2/FB_Adamdec1+_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_jam2pos_adamdec1pos,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_jam2pos_adamdec1pos.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+
+res_jam2pos_adamdec1neg <- test_de(fit, 
+               contrast = cond(condition = "6/Jam2+_uninfected") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_jam2pos_adamdec1neg <- res_jam2pos_adamdec1neg %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_jam2pos_adamdec1neg, "/vol/ExtraVol/markers_jam2pos_adamdec1neg.xlsx")
+
+marker_genes_jam2pos_adamdec1neg <- c(head(res_jam2pos_adamdec1neg, n=25)$name, 
+                                      tail(res_jam2pos_adamdec1neg, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_jam2pos_adamdec1neg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("6/Jam2+_uninfected"),
+                                        starts_with("1/FB_Adamdec1-_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_jam2pos_adamdec1neg,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_jam2pos_adamdec1neg.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+#Let's compare the Hand1+ cells to the Adamdec1+ and Adamdec1- fibroblasts to learn more about their identity
+
+res_hand1pos_adamdec1pos <- test_de(fit, 
+               contrast = cond(condition = "8/Hand1+_uninfected") -
+                          cond(condition = "0-2/FB_Adamdec1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_hand1pos_adamdec1pos <- res_hand1pos_adamdec1pos %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_hand1pos_adamdec1pos, "/vol/ExtraVol/markers_hand1pos_adamdec1pos.xlsx")
+
+marker_genes_hand1pos_adamdec1pos <- c(head(res_hand1pos_adamdec1pos, n=25)$name, 
+                                       tail(res_hand1pos_adamdec1pos, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_hand1pos_adamdec1pos
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("8/Hand1+_uninfected"),
+                                        starts_with("0-2/FB_Adamdec1+_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_hand1pos_adamdec1pos,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_hand1pos_adamdec1pos.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+
+res_hand1pos_adamdec1neg <- test_de(fit, 
+               contrast = cond(condition = "8/Hand1+_uninfected") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_hand1pos_adamdec1neg <- res_hand1pos_adamdec1neg %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_hand1pos_adamdec1neg, "/vol/ExtraVol/markers_hand1pos_adamdec1neg.xlsx")
+
+marker_genes_hand1pos_adamdec1neg <- c(head(res_hand1pos_adamdec1neg, n=25)$name, 
+                                       tail(res_hand1pos_adamdec1neg, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_hand1pos_adamdec1neg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("8/Hand1+_uninfected"),
+                                        starts_with("1/FB_Adamdec1-_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_hand1pos_adamdec1neg,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_hand1pos_adamdec1neg.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+
+#Let's try hand1+ vs myofibroblasts
+res_hand1pos_myofibroblasts <- test_de(fit, 
+               contrast = cond(condition = "8/Hand1+_uninfected") -
+                          cond(condition = "4/Myofibroblasts_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_hand1pos_myofibroblasts <- res_hand1pos_myofibroblasts %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_hand1pos_myofibroblasts, "/vol/ExtraVol/markers_hand1pos_myofibroblasts.xlsx")
+
+marker_genes_hand1pos_myofibroblasts <- c(head(res_hand1pos_myofibroblasts, n=25)$name, 
+                                          tail(res_hand1pos_myofibroblasts, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_hand1pos_myofibroblasts
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("8/Hand1+_uninfected"),
+                                        starts_with("4/Myofibroblasts_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_hand1pos_myofibroblasts,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_hand1pos_myofibroblasts.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+#Let's compare the Adamdec1+ cells to the Adamdec1- fibroblasts to learn more about their markers.
+
+res_adamdec1pos_adamdec1neg <- test_de(fit, 
+               contrast = cond(condition = "0-2/FB_Adamdec1+_uninfected") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_adamdec1pos_adamdec1neg <- res_adamdec1pos_adamdec1neg %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_adamdec1pos_adamdec1neg, "/vol/ExtraVol/markers_adamdec1pos_adamdec1neg.xlsx")
+
+marker_genes_adamdec1pos_adamdec1neg <- c(head(res_adamdec1pos_adamdec1neg, n=25)$name, 
+                                          tail(res_adamdec1pos_adamdec1neg, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_adamdec1pos_adamdec1neg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("0-2/FB_Adamdec1+_uninfected"),
+                                        starts_with("1/FB_Adamdec1-_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_adamdec1pos_adamdec1neg,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_adamdec1pos_adamdec1neg.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+#Let's compare the myofibroblasts to Adamdec1+ and Adamdec1- fibroblasts to learn more about their markers
+
+### Myofibriblast markers against Adamdec1 positive fibroblasts
+
+res_myofibroblasts_adamdec1pos <- test_de(fit, 
+               contrast = cond(condition = "4/Myofibroblasts_uninfected") -
+                          cond(condition = "0-2/FB_Adamdec1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_myofibroblasts_adamdec1pos <- res_myofibroblasts_adamdec1pos %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_myofibroblasts_adamdec1pos, "/vol/ExtraVol/markers_myofibroblasts_adamdec1pos.xlsx")
+
+marker_genes_myofibroblasts_adamdec1pos <- c(head(res_myofibroblasts_adamdec1pos, n=25)$name,
+                                             tail(res_myofibroblasts_adamdec1pos, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_myofibroblasts_adamdec1pos
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("4/Myofibroblasts_uninfected"),
+                                        starts_with("0-2/FB_Adamdec1+_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_myofibroblasts_adamdec1pos,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_myofibroblasts_adamdec1pos.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+
+### Myofibriblast markers against Adamdec1 negative fibroblasts
+
+res_myofibroblasts_adamdec1neg <- test_de(fit, 
+               contrast = cond(condition = "4/Myofibroblasts_uninfected") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_myofibroblasts_adamdec1neg <- res_myofibroblasts_adamdec1neg %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_myofibroblasts_adamdec1neg, "/vol/ExtraVol/markers_myofibroblasts_adamdec1neg.xlsx")
+
+marker_genes_myofibroblasts_adamdec1neg <- c(head(res_myofibroblasts_adamdec1neg, n=25)$name, 
+                                             tail(res_myofibroblasts_adamdec1neg, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_myofibroblasts_adamdec1neg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("4/Myofibroblasts_uninfected"),
+                                        starts_with("1/FB_Adamdec1-_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_myofibroblasts_adamdec1neg,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_myofibroblasts_adamdec1neg.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+#Let's compare the pericytes to Adamdec1+ and Adamdec1- fibroblasts to learn more about their markers
+
+res_pericytes_adamdec1pos <- test_de(fit, 
+               contrast = cond(condition = "7/Pericytes_uninfected") -
+                          cond(condition = "0-2/FB_Adamdec1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_pericytes_adamdec1pos <- res_pericytes_adamdec1pos %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_pericytes_adamdec1pos, "/vol/ExtraVol/markers_pericytes_adamdec1pos.xlsx")
+
+marker_genes_pericytes_adamdec1pos <- c(head(res_pericytes_adamdec1pos, n=25)$name, 
+                                        tail(res_pericytes_adamdec1pos, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_pericytes_adamdec1pos
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("7/Pericytes_uninfected"),
+                                        starts_with("0-2/FB_Adamdec1+_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_pericytes_adamdec1pos,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_pericytes_adamdec1pos.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+
+res_pericytes_adamdec1neg <- test_de(fit, 
+               contrast = cond(condition = "7/Pericytes_uninfected") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_pericytes_adamdec1neg <- res_pericytes_adamdec1neg %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_pericytes_adamdec1neg, "/vol/ExtraVol/markers_pericytes_adamdec1neg.xlsx")
+
+marker_genes_pericytes_adamdec1neg <- c(head(res_pericytes_adamdec1neg, n=25)$name, 
+                                        tail(res_pericytes_adamdec1neg, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_pericytes_adamdec1neg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("7/Pericytes_uninfected"),
+                                        starts_with("1/FB_Adamdec1-_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_pericytes_adamdec1neg,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_pericytes_adamdec1neg.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+```{r}
+#Let's compare the Bmp5+Fbln1- fibroblasts to Adamdec1+ and Adamdec1- fibroblasts to learn more about their markers
+
+res_bmp5posfbln1neg_adamdec1pos <- test_de(fit, 
+               contrast = cond(condition = "3/FB_Bmp5+Fbln1-_uninfected") -
+                          cond(condition = "0-2/FB_Adamdec1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_bmp5posfbln1neg_adamdec1pos <- res_bmp5posfbln1neg_adamdec1pos %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_bmp5posfbln1neg_adamdec1pos, "/vol/ExtraVol/markers_bmp5posfbln1neg_adamdec1pos.xlsx")
+
+marker_genes_bmp5posfbln1neg_adamdec1pos <- c(head(res_bmp5posfbln1neg_adamdec1pos, n=25)$name, 
+                                              tail(res_bmp5posfbln1neg_adamdec1pos, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_bmp5posfbln1neg_adamdec1pos
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("3/FB_Bmp5+Fbln1-_uninfected"),
+                                        starts_with("0-2/FB_Adamdec1+_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_bmp5posfbln1neg_adamdec1pos,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_bmp5posfbln1neg_adamdec1pos.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+
+res_bmp5posfbln1neg_adamdec1neg <- test_de(fit, 
+               contrast = cond(condition = "3/FB_Bmp5+Fbln1-_uninfected") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_bmp5posfbln1neg_adamdec1neg <- res_bmp5posfbln1neg_adamdec1neg %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_bmp5posfbln1neg_adamdec1neg, "/vol/ExtraVol/markers_bmp5posfbln1neg_adamdec1neg.xlsx")
+
+marker_genes_bmp5posfbln1neg_adamdec1neg <- c(head(res_bmp5posfbln1neg_adamdec1neg, n=25)$name, 
+                                              tail(res_bmp5posfbln1neg_adamdec1neg, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_bmp5posfbln1neg_adamdec1neg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("3/FB_Bmp5+Fbln1-_uninfected"),
+                                        starts_with("1/FB_Adamdec1-_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_bmp5posfbln1neg_adamdec1neg,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_bmp5posfbln1neg_adamdec1neg.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+#Let's compare the Bmp5+Fbln1+ fibroblasts to Adamdec1+ and Adamdec1- fibroblasts to learn more about their markers
+
+res_bmp5posfbln1pos_adamdec1pos <- test_de(fit, 
+               contrast = cond(condition = "5/FB_Bmp5+Fbln1+_uninfected") -
+                          cond(condition = "0-2/FB_Adamdec1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_bmp5posfbln1pos_adamdec1pos <- res_bmp5posfbln1pos_adamdec1pos %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_bmp5posfbln1pos_adamdec1pos, "/vol/ExtraVol/markers_bmp5posfbln1pos_adamdec1pos.xlsx")
+
+marker_genes_bmp5posfbln1pos_adamdec1pos <- c(head(res_bmp5posfbln1pos_adamdec1pos, n=25)$name, 
+                                              tail(res_bmp5posfbln1pos_adamdec1pos, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_bmp5posfbln1pos_adamdec1pos
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("5/FB_Bmp5+Fbln1+_uninfected"),
+                                        starts_with("0-2/FB_Adamdec1+_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_bmp5posfbln1pos_adamdec1pos,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_bmp5posfbln1pos_adamdec1pos.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+
+res_bmp5posfbln1pos_adamdec1neg <- test_de(fit, 
+               contrast = cond(condition = "5/FB_Bmp5+Fbln1+_uninfected") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_bmp5posfbln1pos_adamdec1neg <- res_bmp5posfbln1pos_adamdec1neg %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_bmp5posfbln1pos_adamdec1neg, "/vol/ExtraVol/markers_bmp5posfbln1pos_adamdec1neg.xlsx")
+
+marker_genes_bmp5posfbln1pos_adamdec1neg <- c(head(res_bmp5posfbln1pos_adamdec1neg, n=25)$name, 
+                                              tail(res_bmp5posfbln1pos_adamdec1neg, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_bmp5posfbln1pos_adamdec1neg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("5/FB_Bmp5+Fbln1+_uninfected"),
+                                        starts_with("1/FB_Adamdec1-_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_bmp5posfbln1pos_adamdec1neg,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_bmp5posfbln1pos_adamdec1neg.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+#Let's compare the Bmp5+Fbln1+ and Bmp5+Fbln1- with each other to learn more about their markers
+
+res_bmp5posfbln1pos_bmp5posfblnneg <- test_de(fit, 
+               contrast = cond(condition = "5/FB_Bmp5+Fbln1+_uninfected") -
+                          cond(condition = "3/FB_Bmp5+Fbln1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+export_res_bmp5posfbln1pos_bmp5posfblnneg <- res_bmp5posfbln1pos_bmp5posfblnneg %>%
+  subset(adj_pval <= 0.001) %>%
+  dplyr::select(-c(f_statistic, df1, df2, lfc))
+
+write.xlsx(export_res_bmp5posfbln1pos_bmp5posfblnneg, "/vol/ExtraVol/markers_bmp5posfbln1pos_bmp5posfblnneg.xlsx")
+
+marker_genes_bmp5posfbln1pos_bmp5posfblnneg <- c(head(res_bmp5posfbln1pos_bmp5posfblnneg, n=25)$name, 
+                                              
+                                                 tail(res_bmp5posfbln1pos_bmp5posfblnneg, n=25)$name)
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% marker_genes_bmp5posfbln1pos_bmp5posfblnneg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("5/FB_Bmp5+Fbln1+_uninfected"),
+                                        starts_with("3/FB_Bmp5+Fbln1-_uninfected"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor for column annotation
+group_labels <- rep(unique(str_remove_all(colnames(final_data), '_Rep.+')), each = 10)
+# Define colors for each group
+group_labels_unique <- unique(group_labels)
+group_colors <- c("#2ca02c", "#ff7f0e")
+names(group_colors) <- group_labels_unique
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[marker_genes_bmp5posfbln1pos_bmp5posfblnneg,]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/Markers_bmp5posfbln1pos_bmp5posfblnneg.pdf", width = 6, height = 3.5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        cluster_rows = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+#Let's see how Adamdec1- cells respond to the infection
+
+res_adamdec1neg_early <- test_de(fit, 
+               contrast = cond(condition = "1/FB_Adamdec1-_early") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_adamdec1neg_peak <- test_de(fit, 
+               contrast = cond(condition = "1/FB_Adamdec1-_peak") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_adamdec1neg_repair <- test_de(fit, 
+               contrast = cond(condition = "1/FB_Adamdec1-_repair") -
+                          cond(condition = "1/FB_Adamdec1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+infection_response_genes_adamdec1neg <- unique(c(
+  subset(res_adamdec1neg_early, adj_pval <= 0.001)$name,
+  subset(res_adamdec1neg_peak, adj_pval <= 0.001)$name,
+  subset(res_adamdec1neg_repair, adj_pval <= 0.00)$name
+))
+
+```
+
+```{r}
+#Let's see how Adamdec1+ cells respond to the infection
+
+res_adamdec1pos_early <- test_de(fit, 
+               contrast = cond(condition = "0-2/FB_Adamdec1+_early") -
+                          cond(condition = "0-2/FB_Adamdec1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_adamdec1pos_peak <- test_de(fit, 
+               contrast = cond(condition = "0-2/FB_Adamdec1+_peak") -
+                          cond(condition = "0-2/FB_Adamdec1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_adamdec1pos_repair <- test_de(fit, 
+               contrast = cond(condition = "0-2/FB_Adamdec1+_repair") -
+                          cond(condition = "0-2/FB_Adamdec1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+infection_response_genes_adamdec1pos <- unique(c(
+  subset(res_adamdec1pos_early, adj_pval <= 0.001)$name,
+  subset(res_adamdec1pos_peak, adj_pval <= 0.001)$name,
+  subset(res_adamdec1pos_repair, adj_pval <= 0.001)$name
+))
+```
+
+
+```{r}
+#Let's see how myofibroblasts respond to the infection
+
+res_myofibroblasts_early <- test_de(fit, 
+               contrast = cond(condition = "4/Myofibroblasts_early") -
+                          cond(condition = "4/Myofibroblasts_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_myofibroblasts_peak <- test_de(fit, 
+               contrast = cond(condition = "4/Myofibroblasts_peak") -
+                          cond(condition = "4/Myofibroblasts_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_myofibroblasts_repair <- test_de(fit, 
+               contrast = cond(condition = "4/Myofibroblasts_repair") -
+                          cond(condition = "4/Myofibroblasts_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+infection_response_genes_myofibroblasts <- unique(c(
+  subset(res_myofibroblasts_early, adj_pval <= 0.001)$name,
+  subset(res_myofibroblasts_peak, adj_pval <= 0.001)$name,
+  subset(res_myofibroblasts_repair, adj_pval <= 0.001)$name
+))
+```
+
+```{r}
+#Let's see how Bmp5+Fbln1+ respond to the infection
+
+res_bmp5fbln1pos_early <- test_de(fit, 
+               contrast = cond(condition = "5/FB_Bmp5+Fbln1+_early") -
+                          cond(condition = "5/FB_Bmp5+Fbln1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_bmp5fbln1pos_peak <- test_de(fit, 
+               contrast = cond(condition = "5/FB_Bmp5+Fbln1+_peak") -
+                          cond(condition = "5/FB_Bmp5+Fbln1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_bmp5fbln1pos_repair <- test_de(fit, 
+               contrast = cond(condition = "5/FB_Bmp5+Fbln1+_repair") -
+                          cond(condition = "5/FB_Bmp5+Fbln1+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+infection_response_genes_bmp5fbln1pos <- unique(c(
+  subset(res_bmp5fbln1pos_early, adj_pval <= 0.001)$name,
+  subset(res_bmp5fbln1pos_peak, adj_pval <= 0.001)$name,
+  subset(res_bmp5fbln1pos_repair, adj_pval <= 0.001)$name
+))
+```
+
+```{r}
+#Let's see how Bmp5+Fbln1- respond to the infection
+
+res_bmp5fbln1neg_early <- test_de(fit, 
+               contrast = cond(condition = "3/FB_Bmp5+Fbln1-_early") -
+                          cond(condition = "3/FB_Bmp5+Fbln1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_bmp5fbln1neg_peak <- test_de(fit, 
+               contrast = cond(condition = "3/FB_Bmp5+Fbln1-_peak") -
+                          cond(condition = "3/FB_Bmp5+Fbln1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_bmp5fbln1neg_repair <- test_de(fit, 
+               contrast = cond(condition = "3/FB_Bmp5+Fbln1-_repair") -
+                          cond(condition = "3/FB_Bmp5+Fbln1-_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+infection_response_genes_bmp5fbln1neg <- unique(c(
+  subset(res_bmp5fbln1neg_early, adj_pval <= 0.001)$name,
+  subset(res_bmp5fbln1neg_peak, adj_pval <= 0.001)$name,
+  subset(res_bmp5fbln1neg_repair, adj_pval <= 0.001)$name
+))
+```
+
+```{r}
+#Let's see how Jam2+ cells respond to the infection
+
+res_jam2pos_early <- test_de(fit, 
+               contrast = cond(condition = "6/Jam2+_early") -
+                          cond(condition = "6/Jam2+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_jam2pos_peak <- test_de(fit, 
+               contrast = cond(condition = "6/Jam2+_peak") -
+                          cond(condition = "6/Jam2+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_jam2pos_repair <- test_de(fit, 
+               contrast = cond(condition = "6/Jam2+_repair") -
+                          cond(condition = "6/Jam2+_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+infection_response_genes_jam2pos <- unique(c(
+  subset(res_jam2pos_early, adj_pval <= 0.001)$name,
+  subset(res_jam2pos_peak, adj_pval <= 0.001)$name,
+  subset(res_jam2pos_repair, adj_pval <= 0.001)$name
+))
+```
+
+```{r}
+#Let's see how pericytes respond to the infection
+
+res_pericytes_early <- test_de(fit, 
+               contrast = cond(condition = "7/Pericytes_early") -
+                          cond(condition = "7/Pericytes_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_pericytes_peak <- test_de(fit, 
+               contrast = cond(condition = "7/Pericytes_peak") -
+                          cond(condition = "7/Pericytes_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+res_pericytes_repair <- test_de(fit, 
+               contrast = cond(condition = "7/Pericytes_repair") -
+                          cond(condition = "7/Pericytes_uninfected"),
+               max_lfc=5) %>% 
+  dplyr::mutate(signed_padj = sign(lfc)*-log10(adj_pval)) %>%
+  dplyr::arrange(desc(signed_padj))
+
+infection_response_genes_pericytes <- unique(c(
+  subset(res_pericytes_early, adj_pval <= 0.001)$name,
+  subset(res_pericytes_peak, adj_pval <= 0.001)$name,
+  subset(res_pericytes_repair, adj_pval <= 0.001)$name
+))
+```
+
+
+```{r}
+###. Adamdec1+ INFECTION RESPONSE ###
+
+# Subset rows based on infection_response_genes_adamdec1pos
+selected_rows <- rownames(normalized_counts) %in% infection_response_genes_adamdec1pos
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns
+final_data <- subsetted_data %>% select(starts_with("0-2/FB_Adamdec1+"))
+
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor with specific order for column names
+column_order_factor <- function(name) {
+  case_when(
+    str_detect(name, "uninfected") ~ "1_uninfected",
+    str_detect(name, "early")      ~ "2_early",
+    str_detect(name, "peak")       ~ "3_peak",
+    str_detect(name, "repair")     ~ "4_repair",
+    TRUE                           ~ "5_other"
+  )
+}
+
+# Define colors for each group
+group_colors <- c("uninfected" = "#1f77b4", "early" = "#ff7f0e", "peak" = "#2ca02c", "repair" = "#d62728")
+
+# Create a factor for column annotation
+group_labels <- rep(c("uninfected", "early", "peak", "repair"), each = 10)
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+# Apply the factor to column names to get the order
+column_order <- sapply(colnames(scaled_data), column_order_factor)
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[, order(column_order)]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/InfectionResponse_Adamdec1pos.pdf", width = 5, height = 10)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+###. Adamdec1- INFECTION RESPONSE ###
+
+# Subset rows based on infection_response_genes_adamdec1pos
+selected_rows <- rownames(normalized_counts) %in% infection_response_genes_adamdec1neg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("1/FB_Adamdec1-"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor with specific order for column names
+column_order_factor <- function(name) {
+  case_when(
+    str_detect(name, "uninfected") ~ "1_uninfected",
+    str_detect(name, "early")      ~ "2_early",
+    str_detect(name, "peak")       ~ "3_peak",
+    str_detect(name, "repair")     ~ "4_repair",
+    TRUE                           ~ "5_other"
+  )
+}
+
+# Define colors for each group
+group_colors <- c("uninfected" = "#1f77b4", "early" = "#ff7f0e", "peak" = "#2ca02c", "repair" = "#d62728")
+
+# Create a factor for column annotation
+group_labels <- rep(c("uninfected", "early", "peak", "repair"), each = 10)
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+# Apply the factor to column names to get the order
+column_order <- sapply(colnames(scaled_data), column_order_factor)
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[, order(column_order)]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/InfectionResponse_Adamdec1neg.pdf", width = 5, height = 7)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+###. Bmp5+Fbln1+ INFECTION RESPONSE ###
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% infection_response_genes_bmp5fbln1pos
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("5/FB_Bmp5+Fbln1+"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor with specific order for column names
+column_order_factor <- function(name) {
+  case_when(
+    str_detect(name, "uninfected") ~ "1_uninfected",
+    str_detect(name, "early")      ~ "2_early",
+    str_detect(name, "peak")       ~ "3_peak",
+    str_detect(name, "repair")     ~ "4_repair",
+    TRUE                           ~ "5_other"
+  )
+}
+
+
+# Create a factor for column annotation
+group_labels <- rep(c("uninfected", "early", "peak", "repair"), each = 10)
+# Define colors for each group
+group_colors <- c("uninfected" = "#1f77b4", "early" = "#ff7f0e", "peak" = "#2ca02c", "repair" = "#d62728")
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+# Apply the factor to column names to get the order
+column_order <- sapply(colnames(scaled_data), column_order_factor)
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[, order(column_order)]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/InfectionResponse_Bmp5Fbln1pos.pdf", width = 5, height = 14)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+###. Bmp5+Fbln1- INFECTION RESPONSE ###
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% infection_response_genes_bmp5fbln1neg
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("3/FB_Bmp5+Fbln1-"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor with specific order for column names
+column_order_factor <- function(name) {
+  case_when(
+    str_detect(name, "uninfected") ~ "1_uninfected",
+    str_detect(name, "early")      ~ "2_early",
+    str_detect(name, "peak")       ~ "3_peak",
+    str_detect(name, "repair")     ~ "4_repair",
+    TRUE                           ~ "5_other"
+  )
+}
+
+
+# Create a factor for column annotation
+group_labels <- rep(c("uninfected", "early", "peak", "repair"), each = 10)
+# Define colors for each group
+group_colors <- c("uninfected" = "#1f77b4", "early" = "#ff7f0e", "peak" = "#2ca02c", "repair" = "#d62728")
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+# Apply the factor to column names to get the order
+column_order <- sapply(colnames(scaled_data), column_order_factor)
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[, order(column_order)]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/InfectionResponse_Bmp5Fbln1neg.pdf", width = 5, height = 2)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+###. Myofibroblasts INFECTION RESPONSE ###
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% infection_response_genes_myofibroblasts
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("4/Myofibroblasts"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor with specific order for column names
+column_order_factor <- function(name) {
+  case_when(
+    str_detect(name, "uninfected") ~ "1_uninfected",
+    str_detect(name, "early")      ~ "2_early",
+    str_detect(name, "peak")       ~ "3_peak",
+    str_detect(name, "repair")     ~ "4_repair",
+    TRUE                           ~ "5_other"
+  )
+}
+
+
+# Create a factor for column annotation
+group_labels <- rep(c("uninfected", "early", "peak", "repair"), each = 10)
+# Define colors for each group
+group_colors <- c("uninfected" = "#1f77b4", "early" = "#ff7f0e", "peak" = "#2ca02c", "repair" = "#d62728")
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+# Apply the factor to column names to get the order
+column_order <- sapply(colnames(scaled_data), column_order_factor)
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[, order(column_order)]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/InfectionResponse_myofibroblasts.pdf", width = 5, height = 13)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+###. Jam2+ INFECTION RESPONSE ###
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% infection_response_genes_jam2pos
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("6/Jam2+"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor with specific order for column names
+column_order_factor <- function(name) {
+  case_when(
+    str_detect(name, "uninfected") ~ "1_uninfected",
+    str_detect(name, "early")      ~ "2_early",
+    str_detect(name, "peak")       ~ "3_peak",
+    str_detect(name, "repair")     ~ "4_repair",
+    TRUE                           ~ "5_other"
+  )
+}
+
+
+# Create a factor for column annotation
+group_labels <- rep(c("uninfected", "early", "peak", "repair"), each = 10)
+# Define colors for each group
+group_colors <- c("uninfected" = "#1f77b4", "early" = "#ff7f0e", "peak" = "#2ca02c", "repair" = "#d62728")
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+# Apply the factor to column names to get the order
+column_order <- sapply(colnames(scaled_data), column_order_factor)
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[, order(column_order)]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/InfectionResponse_jam2pos.pdf", width = 5, height = 5)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+```{r}
+###. Pericytes INFECTION RESPONSE ###
+
+# Subset rows
+selected_rows <- rownames(normalized_counts) %in% infection_response_genes_pericytes
+subsetted_data <- normalized_counts[selected_rows, ]
+
+# Subset columns 
+final_data <- subsetted_data %>% select(starts_with("7/Pericytes"))
+scaled_data = t(scale(t(final_data)))
+
+
+# Create a factor with specific order for column names
+column_order_factor <- function(name) {
+  case_when(
+    str_detect(name, "uninfected") ~ "1_uninfected",
+    str_detect(name, "early")      ~ "2_early",
+    str_detect(name, "peak")       ~ "3_peak",
+    str_detect(name, "repair")     ~ "4_repair",
+    TRUE                           ~ "5_other"
+  )
+}
+
+
+# Create a factor for column annotation
+group_labels <- rep(c("uninfected", "early", "peak", "repair"), each = 10)
+# Define colors for each group
+group_colors <- c("uninfected" = "#1f77b4", "early" = "#ff7f0e", "peak" = "#2ca02c", "repair" = "#d62728")
+
+# Create column annotation with specified colors
+column_annotation <- HeatmapAnnotation(
+  group = factor(group_labels, levels = names(group_colors)),
+  col = list(group = group_colors)
+)
+
+# Apply the factor to column names to get the order
+column_order <- sapply(colnames(scaled_data), column_order_factor)
+
+# Order the columns based on the factor
+ordered_data <- scaled_data[, order(column_order)]
+
+# Create the heatmap with the ordered data
+pdf("/vol/ExtraVol/InfectionResponse_pericytes.pdf", width = 5, height = 13)
+Heatmap(ordered_data, 
+        name = "Expression", 
+        show_row_names = TRUE, 
+        show_column_names = FALSE,
+        cluster_columns = FALSE,
+        row_names_gp = gpar(fontsize = 5),
+        top_annotation = column_annotation)
+dev.off()
+```
+
+
